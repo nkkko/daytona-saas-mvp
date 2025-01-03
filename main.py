@@ -941,33 +941,39 @@ def post():
         )
 
 @rt("/login")
-def get():
-    """Simple login page."""
-    return Titled(
-        "Login to Daytona Dashboard",
-        Container(
-            Card(
-                H2("Welcome to Daytona Dashboard"),
-                Form(
-                    Input(
-                        type="text",
-                        name="username",
-                        placeholder="Username",
-                        required=True
-                    ),
-                    Input(
-                        type="password",
-                        name="password",
-                        placeholder="Password",
-                        required=True
-                    ),
-                    Button("Login", type="submit"),
-                    method="POST",
-                    action="/login"
-                )
-            )
+def post(username: str, password: str, session):
+    """Login handler using hashed password."""
+    logger.info(f"Login attempt for user: {username}")
+    logger.info(f"Expected user: {config['USER']}")
+    logger.info(f"Have PASSWORD_SALT: {'PASSWORD_SALT' in config}")
+    logger.info(f"Have HASHED_PASSWORD: {'HASHED_PASSWORD' in config}")
+    logger.info(f"Provided password: {password}")
+    logger.info(f"Stored salt: {config['PASSWORD_SALT']}")
+    logger.info(f"Stored hash: {config['HASHED_PASSWORD']}")
+
+    if username != config['USER']:
+        logger.warning("Login failed - invalid username")
+        return RedirectResponse('/login', status_code=303)
+
+    try:
+        # Note the order of parameters here:
+        verification_result = verify_password(
+            stored_password=config['HASHED_PASSWORD'],  # First parameter
+            stored_salt=config['PASSWORD_SALT'],        # Second parameter
+            provided_password=password                  # Third parameter
         )
-    )
+        logger.info(f"Password verification result: {verification_result}")
+
+        if not verification_result:
+            logger.warning("Login failed - invalid password")
+            return RedirectResponse('/login', status_code=303)
+    except Exception as e:
+        logger.error(f"Password verification error: {e}")
+        return RedirectResponse('/login', status_code=303)
+
+    logger.info("Login successful")
+    session['auth'] = username
+    return RedirectResponse('/', status_code=303)
 
 @rt("/login")
 def post(username: str, password: str, session):
