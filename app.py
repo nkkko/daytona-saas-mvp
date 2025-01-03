@@ -53,6 +53,15 @@ additional_styles = """
     padding: 1rem;
 }
 
+.success-message {
+    color: #155724;
+    background-color: #d4edda;
+    border: 1px solid #c3e6cb;
+    padding: 0.75rem 1.25rem;
+    border-radius: 0.25rem;
+    margin-bottom: 1rem;
+}
+
 .error-message {
     color: #dc3545;
     padding: 0.75rem;
@@ -106,6 +115,8 @@ input[type="text"] {
     border-radius: 4px;
     font-family: monospace;
     word-break: break-all;
+    margin: 0.5rem 0;
+    display: block;
 }
 
 .warning {
@@ -265,6 +276,19 @@ def filter_user_keys(api_keys):
     SYSTEM_KEYS = {'default', 'app'}  # Define system keys to filter out
     return [key for key in api_keys if key.name not in SYSTEM_KEYS]
 
+def create_error_response(title: str, message: str):
+    """Create a standardized error response."""
+    return Titled(
+        title,
+        Container(
+            Card(
+                H2(title),
+                P(message, cls="error-message"),
+                A("Back to Login", href="/login", cls="button")
+            )
+        )
+    )
+
 def setup_secret_key() -> str:
     """Setup and validate secret key with appropriate fallbacks."""
     secret_key = os.getenv('SECRET_KEY')
@@ -303,8 +327,9 @@ def setup_config() -> Dict[str, str]:
         'DAYTONA_API_KEY': os.getenv('DAYTONA_API_KEY'),
         'GITHUB_CLIENT_ID': os.getenv('GITHUB_CLIENT_ID'),
         'GITHUB_CLIENT_SECRET': os.getenv('GITHUB_CLIENT_SECRET'),
-        'BASE_URL': os.getenv('BASE_URL', 'http://localhost:5001'),  # Add this line
+        'BASE_URL': os.getenv('BASE_URL', 'http://localhost:5001'),
         'SECRET_KEY': setup_secret_key(),
+        'ALLOWED_GITHUB_USERS': os.getenv('ALLOWED_GITHUB_USERS', '').split(',')
     }
 
     missing_vars = [k for k, v in config.items()
@@ -584,78 +609,6 @@ daytona.remove(workspace)'''
         logger.error(f"Dashboard error: {e}")
         return create_error_response("Error", str(e))
 
-@rt("/api-keys")
-def get(auth):
-    """API Keys management page."""
-    try:
-        all_keys = daytona.list_api_keys()
-        user_keys = filter_user_keys(all_keys)
-
-        return Titled(
-            f"API Keys Management - {auth}",
-            Container(
-                Card(
-                    H2("API Keys"),
-                    Form(
-                        Input(
-                            name="key_name",
-                            placeholder="API Key Name",
-                            required=True,
-                            pattern="[a-zA-Z0-9-_]+",
-                            title="Use only letters, numbers, hyphens, and underscores"
-                        ),
-                        Button("Create New Key", type="submit"),
-                        hx_post="/api-keys",
-                        hx_target="#keys-list"
-                    ),
-                    Div(
-                        id="keys-list",
-                        *[Div(
-                            f"Name: {key.name} (Type: {key.type})",
-                            Button(
-                                "Delete",
-                                hx_delete=f"/api-keys/{key.name}",
-                                hx_target="#keys-list",
-                                hx_confirm="Are you sure you want to delete this API key?"
-                            ),
-                            cls="key-item"
-                        ) for key in user_keys]
-                    )
-                ),
-                Div(
-                    A("Back to Dashboard", href="/", cls="button"),
-                    A("Logout", href="/logout", cls="button logout-button"),
-                    cls="button-container"
-                )
-            )
-        )
-    except DaytonaError as e:
-        logger.error(f"API Keys page error: {e}")
-        return create_error_response("Error", str(e))
-
-@rt("/api-keys/onboarding")
-def post():
-    """Create default API key for onboarding."""
-    try:
-        new_key = daytona.generate_api_key("onboarding", key_type="client")
-        if not new_key:
-            return Div(
-                P("Failed to create API key", cls="error"),
-                id="api-key-status"
-            )
-
-        return Div(
-            P("API key created successfully!"),
-            P("Your API key: ", Code(new_key), cls="api-key"),
-            P("Please save this key as it won't be shown again.", cls="warning"),
-            id="api-key-status"
-        )
-    except DaytonaError as e:
-        return Div(
-            P(f"Error creating API key: {str(e)}", cls="error"),
-            id="api-key-status"
-        )
-
 @rt("/workspaces")
 def get(auth):
     """Workspaces management page."""
@@ -804,8 +757,19 @@ async def get(code: Optional[str] = None, error: Optional[str] = None, error_des
         user_response.raise_for_status()
 
         user = user_response.json()
+        username = user['login']
+
+        # Check if user is allowed
+        allowed_users = config['ALLOWED_GITHUB_USERS']
+        if allowed_users and username not in allowed_users:
+            logger.warning(f"Unauthorized access attempt by GitHub user: {username}")
+            return create_error_response(
+                "Access Denied",
+                "You are not authorized to access this application. Please contact the administrator."
+            )
+
         if session:
-            session['auth'] = user['login']
+            session['auth'] = username
             session['github_token'] = access_token
         return RedirectResponse('/', status_code=303)
 
@@ -880,6 +844,81 @@ def get(auth):
         logger.error(f"API Keys page error: {e}")
         return create_error_response("Error", str(e))
 
+@rt("/api-keys")
+def post(key_name: str):
+    """Create a new API key."""
+    try:
+        if not key_name:
+            return Div(
+                P("Key name is required", cls="error-message"),
+                id="keys-list"
+            )
+
+        # Generate new key
+        new_key = daytona.generate_api_key(key_name)
+        if not new_key:
+            return Div(
+                P("Failed to create API key", cls="error-message"),
+                id="keys-list"
+            )
+
+        # Get updated list and filter system keys
+        all_keys = daytona.list_api_keys()
+        user_keys = filter_user_keys(all_keys)
+
+        return Div(
+            Div(
+                P("API key created successfully!", cls="success-message"),
+                P("Your API key: ", Code(new_key), cls="api-key"),
+                P("Please save this key as it won't be shown again.", cls="warning"),
+            ),
+            Div(
+                *[Div(
+                    Div(
+                        P(f"Name: {key.name}", cls="key-name"),
+                        Button(
+                            "Delete",
+                            hx_delete=f"/api-keys/{key.name}",
+                            hx_target="#keys-list",
+                            hx_confirm=f"Are you sure you want to delete the API key '{key.name}'?",
+                            cls="delete-button"
+                        ),
+                    ),
+                    cls="key-item"
+                ) for key in user_keys] if user_keys else [
+                    P("No API keys found. Create one above.", cls="no-keys-message")
+                ]
+            ),
+            id="keys-list"
+        )
+    except DaytonaError as e:
+        return Div(
+            P(f"Error: {str(e)}", cls="error-message"),
+            id="keys-list"
+        )
+
+@rt("/api-keys/onboarding")
+def post():
+    """Create default API key for onboarding."""
+    try:
+        new_key = daytona.generate_api_key("onboarding", key_type="client")
+        if not new_key:
+            return Div(
+                P("Failed to create API key", cls="error"),
+                id="api-key-status"
+            )
+
+        return Div(
+            P("API key created successfully!"),
+            P("Your API key: ", Code(new_key), cls="api-key"),
+            P("Please save this key as it won't be shown again.", cls="warning"),
+            id="api-key-status"
+        )
+    except DaytonaError as e:
+        return Div(
+            P(f"Error creating API key: {str(e)}", cls="error"),
+            id="api-key-status"
+        )
 
 @rt("/api-keys/{key_name}")
 def delete(key_name: str):
