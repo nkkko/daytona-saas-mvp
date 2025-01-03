@@ -416,6 +416,30 @@ def format_uptime(seconds: int) -> str:
 
     return " ".join(parts)
 
+def before(req, sess):
+    """Beforeware function to check authentication."""
+    # Get auth from session
+    auth = req.scope['auth'] = sess.get('auth', None)
+
+    # Get current path
+    path = req.url.path
+
+    # List of paths that don't require authentication
+    public_paths = ['/login', '/logout', '/favicon.ico', '/static']
+
+    # Check if current path is public
+    is_public = any(path.startswith(p) for p in public_paths)
+
+    # If not authenticated and not accessing public path, redirect to login
+    if not auth and not is_public:
+        return RedirectResponse('/login', status_code=303)
+
+    # If authenticated and trying to access login page, redirect to home
+    if auth and path == '/login':
+        return RedirectResponse('/', status_code=303)
+
+    return None
+
 def Navigation(current_page=""):
     """Common navigation component."""
     return Nav(
@@ -615,14 +639,18 @@ daytona.remove(workspace)'''
 # Initialize app and client
 try:
     config = setup_config()
+
+    # Initialize beforeware
+    bware = Beforeware(before, skip=[r'/favicon\.ico', r'/static/.*'])
+
     app, rt = fast_app(
         secret_key=config['SECRET_KEY'],
         htmx=True,
         pico=True,
         debug=os.getenv('ENVIRONMENT') != 'production',
+        before=bware,  # Add beforeware here
         hdrs=(
             Style(additional_styles),
-            # Add meta tag for color scheme
             Meta(name="color-scheme", content="dark light")
         )
     )
