@@ -463,9 +463,11 @@ def Navigation(current_page=""):
     """Common navigation component."""
     return Nav(
         Ul(
-            Li(A("Get Started", href="/", cls=("active" if current_page == "dashboard" else ""))),
+            Li(A("Get Started", href="/?show_getting_started=true", cls=("active" if current_page == "dashboard" else ""))),
             Li(A("API Keys", href="/api-keys", cls=("active" if current_page == "api-keys" else ""))),
             Li(A("Workspaces", href="/workspaces", cls=("active" if current_page == "workspaces" else ""))),
+            Li(A("GitHub ↗", href="https://github.com/daytonaio/daytona/", target="_blank")),
+            Li(A("Docs ↗", href="https://daytona.io/docs", target="_blank")),
             Li(A("Logout", href="/logout", cls="contrast")),
         )
     )
@@ -690,19 +692,18 @@ except (ConfigError, DaytonaError) as e:
     raise
 
 @rt("/")
-def get(auth):
+def get(auth, req):
     """Main dashboard with onboarding or redirect if already onboarded."""
     try:
         all_keys = daytona.list_api_keys()
         user_keys = filter_user_keys(all_keys)
         has_user_keys = len(user_keys) > 0
 
-        # Check if user has already completed onboarding
-        if any(key.name == "onboarding" for key in all_keys):
-            # User has already completed onboarding, redirect to API keys page
+        # Check if user has API keys and is not explicitly requesting the getting started page
+        if len(user_keys) > 0 and not req.query_params.get('show_getting_started'):
             return RedirectResponse('/api-keys', status_code=303)
 
-        # If no onboarding key exists, show the onboarding page
+        # Otherwise show the getting started page
         python_example = generate_python_example(api_url=config['DAYTONA_API_URL'])
 
         # Add copy button JavaScript

@@ -23,6 +23,15 @@ APP_DIR="/home/$DAYTONA_USER/daytona-saas-mvp"
 VENV_DIR="$APP_DIR/venv"
 SERVER_IP=$(hostname -I | awk '{print $1}')
 
+# Prompt for username
+read -p "Enter the desired username (default: admin): " ADMIN_USERNAME
+ADMIN_USERNAME=${ADMIN_USERNAME:-admin}  # Use 'admin' if no input provided
+
+# Validate username
+if [[ ! $ADMIN_USERNAME =~ ^[a-zA-Z0-9_-]+$ ]]; then
+    error "Invalid username. Username can only contain letters, numbers, underscores, and hyphens."
+fi
+
 # Function to run commands as daytona user
 run_as_daytona() {
     su - $DAYTONA_USER -c "$1"
@@ -214,13 +223,14 @@ DAYTONA_API_KEY=$API_KEY
 SECRET_KEY=$(openssl rand -hex 32)
 PASSWORD_SALT=$SALT
 HASHED_PASSWORD=$HASH
+APP_USER=$ADMIN_USERNAME
 EOF
 
 chown $DAYTONA_USER:$DAYTONA_USER "$APP_DIR/.env"
 chmod 600 "$APP_DIR/.env"
 
 # Save credentials
-echo "Admin Username: admin" > "/home/$DAYTONA_USER/admin_credentials.txt"
+echo "Admin Username: $ADMIN_USERNAME" > "/home/$DAYTONA_USER/admin_credentials.txt"
 echo "Admin Password: $ADMIN_PASSWORD" >> "/home/$DAYTONA_USER/admin_credentials.txt"
 chown $DAYTONA_USER:$DAYTONA_USER "/home/$DAYTONA_USER/admin_credentials.txt"
 chmod 600 "/home/$DAYTONA_USER/admin_credentials.txt"
@@ -254,7 +264,7 @@ log "Testing login..."
 sleep 5  # Wait for application to be fully ready
 CURL_OUTPUT=$(curl -s -X POST \
      -H "Content-Type: application/x-www-form-urlencoded" \
-     -d "username=admin&password=$ADMIN_PASSWORD" \
+     -d "username=$ADMIN_USERNAME&password=$ADMIN_PASSWORD" \
      "http://localhost:5001/login" -v 2>&1)
 
 # Display Configuration
@@ -267,9 +277,6 @@ echo "============================================"
 echo "Service URLs:"
 echo "Web Interface: http://$SERVER_IP"
 echo "Daytona API: http://$SERVER_IP:3986"
-echo "============================================"
-echo "API Key:"
-cat "/home/$DAYTONA_USER/api_key.txt"
 echo "============================================"
 
 log "Setup completed successfully!"
