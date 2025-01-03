@@ -1045,4 +1045,4 @@ def delete(workspace_id: str):
         return f"Error: {str(e)}"
 
 if __name__ == "__main__":
-    serve()
+    serve(host="0.0.0.0", port=5001)
