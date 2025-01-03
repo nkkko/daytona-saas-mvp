@@ -941,79 +941,60 @@ def post():
         )
 
 @rt("/login")
-def post(username: str, password: str, session):
-    """Login handler using hashed password."""
-    logger.info(f"Login attempt for user: {username}")
-    logger.info(f"Expected user: {config['USER']}")
-    logger.info(f"Have PASSWORD_SALT: {'PASSWORD_SALT' in config}")
-    logger.info(f"Have HASHED_PASSWORD: {'HASHED_PASSWORD' in config}")
-    logger.info(f"Provided password: {password}")
-    logger.info(f"Stored salt: {config['PASSWORD_SALT']}")
-    logger.info(f"Stored hash: {config['HASHED_PASSWORD']}")
+def get(req):
+    """Login page with error handling."""
+    error = req.query_params.get('error')
+    error_message = None
 
-    if username != config['USER']:
-        logger.warning("Login failed - invalid username")
-        return RedirectResponse('/login', status_code=303)
+    if error == 'invalid_credentials':
+        error_message = "Invalid username or password"
+    elif error == 'server_error':
+        error_message = "An error occurred. Please try again."
 
-    try:
-        # Note the order of parameters here:
-        verification_result = verify_password(
-            stored_password=config['HASHED_PASSWORD'],  # First parameter
-            stored_salt=config['PASSWORD_SALT'],        # Second parameter
-            provided_password=password                  # Third parameter
+    return Titled(
+        "Login",
+        Container(
+            Card(
+                H2("Login"),
+                P(error_message, cls="error-message") if error_message else None,
+                Form(
+                    Input(name="username", type="text", placeholder="Username", required=True),
+                    Input(name="password", type="password", placeholder="Password", required=True),
+                    Button("Login", type="submit"),
+                    method="post",
+                    action="/login"
+                )
+            )
         )
-        logger.info(f"Password verification result: {verification_result}")
-
-        if not verification_result:
-            logger.warning("Login failed - invalid password")
-            return RedirectResponse('/login', status_code=303)
-    except Exception as e:
-        logger.error(f"Password verification error: {e}")
-        return RedirectResponse('/login', status_code=303)
-
-    logger.info("Login successful")
-    session['auth'] = username
-    return RedirectResponse('/', status_code=303)
+    )
 
 @rt("/login")
 def post(username: str, password: str, session):
     """Login handler using hashed password."""
     logger.info("=== Login Attempt ===")
-    logger.info(f"Username provided: {username}")
-    logger.info(f"Expected username: {config['USER']}")
-    logger.info(f"Password provided: {password}")
-    logger.info(f"Stored salt: {config['PASSWORD_SALT']}")
-    logger.info(f"Stored hash: {config['HASHED_PASSWORD']}")
+    logger.info(f"Username: {username}")
+    logger.info(f"Config user: {config['USER']}")
 
     if username != config['USER']:
-        logger.warning("Login failed - invalid username")
-        return RedirectResponse('/login', status_code=303)
+        logger.warning("Invalid username")
+        return RedirectResponse('/login?error=invalid_credentials', status_code=303)
 
     try:
-        # Generate verification hash
-        _, verification_hash = hash_password(password, config['PASSWORD_SALT'])
-        logger.info(f"Verification hash: {verification_hash}")
-
-        # Verify password
-        verification_result = verify_password(
-            config['HASHED_PASSWORD'],
-            config['PASSWORD_SALT'],
-            password
-        )
-        logger.info(f"Password verification result: {verification_result}")
-
-        if not verification_result:
-            logger.warning("Login failed - invalid password")
-            return RedirectResponse('/login', status_code=303)
-
+        # Use the verify_password function from utils.auth
+        if verify_password(
+            stored_password=config['HASHED_PASSWORD'],
+            stored_salt=config['PASSWORD_SALT'],
+            provided_password=password
+        ):
+            logger.info("Login successful")
+            session['auth'] = username
+            return RedirectResponse('/', status_code=303)
+        else:
+            logger.warning("Invalid password")
+            return RedirectResponse('/login?error=invalid_credentials', status_code=303)
     except Exception as e:
-        logger.error(f"Password verification error: {e}")
-        logger.exception(e)  # This will log the full stack trace
-        return RedirectResponse('/login', status_code=303)
-
-    logger.info("Login successful")
-    session['auth'] = username
-    return RedirectResponse('/', status_code=303)
+        logger.error(f"Login error: {str(e)}")
+        return RedirectResponse('/login?error=server_error', status_code=303)
 
 @rt("/logout")
 def get(session):
