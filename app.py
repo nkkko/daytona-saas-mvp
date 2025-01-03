@@ -12,6 +12,71 @@ import json
 
 # Add some CSS styles
 additional_styles = """
+:root {
+    --pico-theme-color: "dark";
+}
+
+html {
+    data-theme: "dark";
+}
+
+/* Navigation styles */
+nav {
+    margin-bottom: 2rem;
+    border-bottom: 1px solid var(--pico-muted-border-color);
+    padding-bottom: 1rem;
+}
+
+nav ul {
+    margin: 0;
+    padding: 0;
+}
+
+nav ul li {
+    display: inline-block;
+    margin-right: 1rem;
+}
+
+nav ul li:last-child {
+    margin-right: 0;
+}
+
+.code-container {
+    position: relative;
+}
+
+.copy-button {
+    position: absolute;
+    top: 0.5rem;
+    right: 0.5rem;
+    padding: 0.25rem 0.75rem;
+    background-color: #2b3035;  /* Dark background */
+    border: 1px solid #404549;  /* Visible border */
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: #e9ecef;  /* Light text color */
+    transition: all 0.2s ease;
+    z-index: 10;    /* Ensure button stays above code block */
+}
+
+.copy-button:hover {
+    background-color: #3b4045;  /* Slightly lighter on hover */
+    border-color: #505559;
+}
+
+.copy-button.copied {
+    background-color: #28a745;  /* Success green */
+    border-color: #218838;
+    color: white;
+}
+
+/* Adjust the code container to ensure proper contrast */
+.code-container pre {
+    background-color: #1a1d20;  /* Darker background for code */
+    margin: 0;
+}
+
 .key-item {
     display: flex;
     align-items: center;
@@ -351,6 +416,17 @@ def format_uptime(seconds: int) -> str:
 
     return " ".join(parts)
 
+def Navigation(current_page=""):
+    """Common navigation component."""
+    return Nav(
+        Ul(
+            Li(A("Get Started", href="/", cls=("active" if current_page == "dashboard" else ""))),
+            Li(A("API Keys", href="/api-keys", cls=("active" if current_page == "api-keys" else ""))),
+            Li(A("Workspaces", href="/workspaces", cls=("active" if current_page == "workspaces" else ""))),
+            Li(A("Logout", href="/logout", cls="contrast")),
+        )
+    )
+
 class DaytonaClient:
     def __init__(self, base_url: str, initial_api_key: Optional[str] = None, timeout: int = 10):
         self.base_url = base_url.rstrip('/')
@@ -509,6 +585,33 @@ class DaytonaClient:
             logger.error(f"Error deleting all workspaces: {e}")
             return False
 
+def generate_python_example(api_key: Optional[str] = None, api_url: str = None) -> str:
+    """Generate Python example code with optional API key."""
+    return f'''from daytona_sdk import Daytona, DaytonaConfig
+
+config = DaytonaConfig(
+    api_key="{api_key or 'YOUR_API_KEY'}",
+    server_url="{api_url}",
+    target="local"
+)
+daytona = Daytona(config=config)
+
+workspace = daytona.create()
+
+code = """
+import platform
+import os
+
+print(f"Hello from the sandbox!")
+print(f"I'm running on Python {{platform.python_version()}}")
+print(f"This code is running in: {{platform.system()}}")
+"""
+
+response = workspace.process.code_run(code)
+print(response.result)
+
+daytona.remove(workspace)'''
+
 # Initialize app and client
 try:
     config = setup_config()
@@ -517,7 +620,11 @@ try:
         htmx=True,
         pico=True,
         debug=os.getenv('ENVIRONMENT') != 'production',
-        hdrs=(Style(additional_styles),)  # Add the styles
+        hdrs=(
+            Style(additional_styles),
+            # Add meta tag for color scheme
+            Meta(name="color-scheme", content="dark light")
+        )
     )
     daytona = DaytonaClient(
         base_url=config['DAYTONA_API_URL'],
@@ -536,30 +643,57 @@ except (ConfigError, DaytonaError) as e:
 
 @rt("/")
 def get(auth):
-    """Main dashboard with onboarding."""
+    """Main dashboard with onboarding or redirect if already onboarded."""
     try:
         all_keys = daytona.list_api_keys()
         user_keys = filter_user_keys(all_keys)
         has_user_keys = len(user_keys) > 0
 
-        python_example = '''from daytona_sdk import Daytona, CreateWorkspaceParams
+        # Check if user has already completed onboarding
+        if any(key.name == "onboarding" for key in all_keys):
+            # User has already completed onboarding, redirect to API keys page
+            return RedirectResponse('/api-keys', status_code=303)
 
-daytona = Daytona()
+        # If no onboarding key exists, show the onboarding page
+        python_example = generate_python_example(api_url=config['DAYTONA_API_URL'])
 
-params = CreateWorkspaceParams(language="python")
-workspace = daytona.create()
+        # Add copy button JavaScript
+        copy_script = """
+        function copyText(text, buttonEl) {
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            document.execCommand('copy');
+            document.body.removeChild(textArea);
 
-response = workspace.process.code_run('print("Sum of 3 and 4 is " + str(3 + 4))')
-if response.code != 0:
-    print(f"Error: {response.code} {response.result}")
-else:
-    print(response.result)
+            // Update button state
+            buttonEl.classList.add('copied');
+            const originalText = buttonEl.textContent;
+            buttonEl.textContent = 'Copied!';
 
-daytona.remove(workspace)'''
+            // Reset button state after 2 seconds
+            setTimeout(() => {
+                buttonEl.classList.remove('copied');
+                buttonEl.textContent = originalText;
+            }, 2000);
+        }
+
+        function copyInstall(buttonEl) {
+            const installCommand = document.getElementById('install-command').textContent;
+            copyText(installCommand.trim(), buttonEl);
+        }
+
+        function copyCode(buttonEl) {
+            const codeEl = document.getElementById('python-example');
+            copyText(codeEl.textContent, buttonEl);
+        }
+        """
 
         return Titled(
-            f"Daytona Dashboard - {auth}",
+            f"Daytona Dashboard",
             Container(
+                Navigation(current_page="dashboard"),
                 Card(
                     H2("Create your first development environment"),
                     Div(
@@ -567,7 +701,7 @@ daytona.remove(workspace)'''
                         Div(
                             Form(
                                 Button(
-                                    "Create Default API Key",
+                                    "Create Your First API Key",
                                     type="submit",
                                     disabled=has_user_keys
                                 ),
@@ -586,10 +720,49 @@ daytona.remove(workspace)'''
                     Div(
                         H3("2. Create a dev environment"),
                         Div(
-                            H4("Python Quick Start"),
-                            Pre(
-                                Code(python_example),
-                                cls="language-python"
+                            H4("First, install the Daytona SDK"),
+                            P("Run this command in your terminal:"),
+                            Div(
+                                Pre(
+                                    Code("pip install daytona_sdk"),
+                                    cls="language-bash",
+                                    id="install-command"
+                                ),
+                                Button(
+                                    "Copy",
+                                    onclick="copyInstall(this)",
+                                    cls="copy-button"
+                                ),
+                                cls="code-container"
+                            ),
+                            H4("Then, create and run the Python script"),
+                            P("1. Save this code in a file named ", Code("app.py"), ":"),
+                            Div(
+                                Pre(
+                                    Code(python_example),
+                                    cls="language-python",
+                                    id="python-example"
+                                ),
+                                Button(
+                                    "Copy",
+                                    onclick="copyCode(this)",
+                                    cls="copy-button"
+                                ),
+                                cls="code-container"
+                            ),
+                            P("2. Run the script with:"),
+                            Div(
+                                Pre(
+                                    Code("python app.py"),
+                                    cls="language-bash",
+                                    id="run-command"
+                                ),
+                                Button(
+                                    "Copy",
+                                    onclick="copyRun(this)",
+                                    cls="copy-button"
+                                ),
+                                cls="code-container"
                             ),
                             cls="step-content"
                         ),
@@ -597,12 +770,50 @@ daytona.remove(workspace)'''
                     ),
                     cls="onboarding-card"
                 ),
-                A("Logout", href="/logout", cls="button logout-button")
+                Script(copy_script)
             )
         )
     except DaytonaError as e:
         logger.error(f"Dashboard error: {e}")
         return create_error_response("Error", str(e))
+
+@rt("/api-keys/onboarding")
+def post():
+    """Create default API key for onboarding."""
+    try:
+        new_key = daytona.generate_api_key("onboarding", key_type="client")
+        if not new_key:
+            return Div(
+                P("Failed to create API key", cls="error"),
+                id="api-key-status"
+            )
+
+        # Generate updated example with the new key
+        updated_example = generate_python_example(
+            api_key=new_key,
+            api_url=config['DAYTONA_API_URL']
+        )
+
+        return Div(
+            P("API key created successfully!"),
+            P("Your API key: ", Code(new_key), cls="api-key"),
+            P("Please save this key as it won't be shown again.", cls="warning"),
+            Script(f"""
+                document.getElementById('python-example').textContent = `{updated_example}`;
+                // Re-initialize syntax highlighting if you're using it
+                if (typeof hljs !== 'undefined') {{
+                    document.querySelectorAll('pre code').forEach((el) => {{
+                        hljs.highlightElement(el);
+                    }});
+                }}
+            """),
+            id="api-key-status"
+        )
+    except DaytonaError as e:
+        return Div(
+            P(f"Error creating API key: {str(e)}", cls="error"),
+            id="api-key-status"
+        )
 
 @rt("/workspaces")
 def get(auth):
@@ -611,8 +822,9 @@ def get(auth):
         workspaces = daytona.list_workspaces()
 
         return Titled(
-            f"Daytona Workspaces - {auth}",
+            f"Daytona Workspaces",
             Container(
+                Navigation(current_page="api-keys"),
                 Card(
                     H2("Workspaces"),
                     Div(
@@ -651,11 +863,6 @@ def get(auth):
                         ) if workspaces else None,
                         id="delete-all-container"
                     )
-                ),
-                Div(
-                    A("Back to API Keys", href="/", cls="button"),
-                    A("Logout", href="/logout", cls="button logout-button"),
-                    cls="button-container"
                 )
             )
         )
@@ -735,8 +942,9 @@ def get(auth):
         user_keys = filter_user_keys(all_keys)
 
         return Titled(
-            f"API Keys Management - {auth}",
+            f"API Keys Management",
             Container(
+                Navigation(current_page="api-keys"),
                 Card(
                     H2("API Keys"),
                     Form(
@@ -770,11 +978,6 @@ def get(auth):
                             P("No API keys found. Create one above.", cls="no-keys-message")
                         ]
                     )
-                ),
-                Div(
-                    A("Back to Dashboard", href="/", cls="button"),
-                    A("Logout", href="/logout", cls="button logout-button"),
-                    cls="button-container"
                 )
             )
         )
@@ -860,29 +1063,6 @@ def post(key_name: str):
             P("An unexpected error occurred while creating the API key. Please try again.",
               cls="error-message"),
             id="keys-list"
-        )
-
-@rt("/api-keys/onboarding")
-def post():
-    """Create default API key for onboarding."""
-    try:
-        new_key = daytona.generate_api_key("onboarding", key_type="client")
-        if not new_key:
-            return Div(
-                P("Failed to create API key", cls="error"),
-                id="api-key-status"
-            )
-
-        return Div(
-            P("API key created successfully!"),
-            P("Your API key: ", Code(new_key), cls="api-key"),
-            P("Please save this key as it won't be shown again.", cls="warning"),
-            id="api-key-status"
-        )
-    except DaytonaError as e:
-        return Div(
-            P(f"Error creating API key: {str(e)}", cls="error"),
-            id="api-key-status"
         )
 
 @rt("/api-keys/{key_name}")
