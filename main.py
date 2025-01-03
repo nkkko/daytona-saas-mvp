@@ -9,6 +9,7 @@ import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 import json
+from utils.auth import verify_password
 
 # Add some CSS styles
 additional_styles = """
@@ -391,7 +392,16 @@ def setup_config() -> Dict[str, str]:
         'DAYTONA_API_KEY': os.getenv('DAYTONA_API_KEY'),
         'BASE_URL': os.getenv('BASE_URL', 'http://localhost:5001'),
         'SECRET_KEY': setup_secret_key(),
+        'USER': os.getenv('APP_USER', 'admin'),
+        'PASSWORD_SALT': os.getenv('PASSWORD_SALT'),  # Add this line
+        'HASHED_PASSWORD': os.getenv('HASHED_PASSWORD'),  # Add this line
     }
+
+    # Validate required authentication configuration
+    required_auth_fields = ['USER', 'PASSWORD_SALT', 'HASHED_PASSWORD']
+    missing = [f for f in required_auth_fields if not config.get(f)]
+    if missing:
+        raise ConfigError(f"Missing required authentication configuration: {', '.join(missing)}")
 
     return config
 
@@ -439,6 +449,15 @@ def before(req, sess):
         return RedirectResponse('/', status_code=303)
 
     return None
+
+def validate_auth_config():
+    """Validate authentication configuration."""
+    if os.getenv('ENVIRONMENT') == 'production':
+        if config['USER'] == 'admin' or config['PASSWORD'] == 'admin':
+            raise ConfigError(
+                "Default credentials (admin/admin) are not allowed in production. "
+                "Please set USER and PASSWORD in your environment variables."
+            )
 
 def Navigation(current_page=""):
     """Common navigation component."""
@@ -639,6 +658,7 @@ daytona.remove(workspace)'''
 # Initialize app and client
 try:
     config = setup_config()
+    validate_auth_config()
 
     # Initialize beforeware
     bware = Beforeware(before, skip=[r'/favicon\.ico', r'/static/.*'])
@@ -946,12 +966,31 @@ def get():
 
 @rt("/login")
 def post(username: str, password: str, session):
-    """Simple login handler."""
-    # Add your own authentication logic here
-    if username == "admin" and password == "admin":  # Replace with proper authentication
-        session['auth'] = username
-        return RedirectResponse('/', status_code=303)
-    return RedirectResponse('/login', status_code=303)
+    """Login handler using hashed password."""
+    logger.info(f"Login attempt for user: {username}")
+    logger.info(f"Expected user: {config['USER']}")
+    logger.info(f"Have PASSWORD_SALT: {'PASSWORD_SALT' in config}")
+    logger.info(f"Have HASHED_PASSWORD: {'HASHED_PASSWORD' in config}")
+
+    if username != config['USER']:
+        logger.warning("Login failed - invalid username")
+        return RedirectResponse('/login', status_code=303)
+
+    try:
+        if not verify_password(
+            config['HASHED_PASSWORD'],
+            config['PASSWORD_SALT'],
+            password
+        ):
+            logger.warning("Login failed - invalid password")
+            return RedirectResponse('/login', status_code=303)
+    except Exception as e:
+        logger.error(f"Password verification error: {e}")
+        return RedirectResponse('/login', status_code=303)
+
+    logger.info("Login successful")
+    session['auth'] = username
+    return RedirectResponse('/', status_code=303)
 
 @rt("/logout")
 def get(session):
