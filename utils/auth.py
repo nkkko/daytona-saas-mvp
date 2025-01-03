@@ -31,19 +31,22 @@ def hash_password(password: str, salt: Optional[str] = None) -> Tuple[str, str]:
 
 def verify_password(stored_password: str, stored_salt: str, provided_password: str) -> bool:
     """Verify a password against its hash."""
-    logger.debug(f"Verifying password...")
+    logger.debug("=== Password Verification ===")
+    logger.debug(f"Provided password: {provided_password}")
     logger.debug(f"Stored salt: {stored_salt}")
     logger.debug(f"Stored hash: {stored_password}")
 
-    # Generate hash of provided password
-    _, computed_hash = hash_password(provided_password, stored_salt)
+    key = hashlib.pbkdf2_hmac(
+        'sha256',
+        provided_password.encode('utf-8'),
+        stored_salt.encode('utf-8'),
+        100000
+    )
+    computed_hash = hashlib.sha256(key).hexdigest()
 
     logger.debug(f"Computed hash: {computed_hash}")
-    logger.debug(f"Stored hash:  {stored_password}")
-
-    # Use hmac.compare_digest for secure comparison
     result = hmac.compare_digest(stored_password.encode('utf-8'), computed_hash.encode('utf-8'))
-    logger.debug(f"Password verification result: {result}")
+    logger.debug(f"Match result: {result}")
 
     return result
 

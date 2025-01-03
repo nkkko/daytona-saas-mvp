@@ -972,28 +972,36 @@ def get(req):
 def post(username: str, password: str, session):
     """Login handler using hashed password."""
     logger.info("=== Login Attempt ===")
-    logger.info(f"Username: {username}")
-    logger.info(f"Config user: {config['USER']}")
+    logger.info(f"Username provided: {username}")
+    logger.info(f"Expected username: {config['USER']}")
+    logger.info(f"Password provided: {password}")
+    logger.info(f"Stored salt: {config['PASSWORD_SALT']}")
+    logger.info(f"Stored hash: {config['HASHED_PASSWORD']}")
 
     if username != config['USER']:
-        logger.warning("Invalid username")
+        logger.warning("Login failed - invalid username")
         return RedirectResponse('/login?error=invalid_credentials', status_code=303)
 
     try:
-        # Use the verify_password function from utils.auth
-        if verify_password(
+        # Verify password
+        verification_result = verify_password(
             stored_password=config['HASHED_PASSWORD'],
             stored_salt=config['PASSWORD_SALT'],
             provided_password=password
-        ):
+        )
+        logger.info(f"Password verification result: {verification_result}")
+
+        if verification_result:
             logger.info("Login successful")
             session['auth'] = username
             return RedirectResponse('/', status_code=303)
         else:
-            logger.warning("Invalid password")
+            logger.warning("Login failed - invalid password")
             return RedirectResponse('/login?error=invalid_credentials', status_code=303)
+
     except Exception as e:
-        logger.error(f"Login error: {str(e)}")
+        logger.error(f"Password verification error: {e}")
+        logger.exception(e)  # This will log the full stack trace
         return RedirectResponse('/login?error=server_error', status_code=303)
 
 @rt("/logout")
