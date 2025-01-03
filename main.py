@@ -956,7 +956,7 @@ def get(req):
         error_message = "An error occurred. Please try again."
 
     return Titled(
-        "Login",
+        "Daytona AI Sandboxes DEMO",
         Container(
             Card(
                 H2("Login"),
