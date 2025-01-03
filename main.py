@@ -743,11 +743,11 @@ def get(auth, req):
         """
 
         return Titled(
-            f"Daytona Dashboard",
+            f"Daytona Demo Dashboard",
             Container(
                 Navigation(current_page="dashboard"),
                 Card(
-                    H2("Create Your First AI Sandbox in Seconds"),
+                    H2("Create Your First AI Sandbox Super Fast"),
                     Div(
                         H3("1. Create an API key"),
                         Div(
