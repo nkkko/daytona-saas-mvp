@@ -466,6 +466,7 @@ def Navigation(current_page=""):
             Li(A("Get Started", href="/?show_getting_started=true", cls=("active" if current_page == "dashboard" else ""))),
             Li(A("API Keys", href="/api-keys", cls=("active" if current_page == "api-keys" else ""))),
             Li(A("Workspaces", href="/workspaces", cls=("active" if current_page == "workspaces" else ""))),
+            Li(A("SDK ↗", href="https://github.com/daytonaio/sdk/", target="_blank")),
             Li(A("GitHub ↗", href="https://github.com/daytonaio/daytona/", target="_blank")),
             Li(A("Docs ↗", href="https://daytona.io/docs", target="_blank")),
             Li(A("Logout", href="/logout", cls="contrast")),
