@@ -743,13 +743,13 @@ def get(auth):
             Container(
                 Navigation(current_page="dashboard"),
                 Card(
-                    H2("Create your first development environment"),
+                    H2("Create Your First AI Sandbox in Seconds"),
                     Div(
-                        H3("1. Add an API key"),
+                        H3("1. Create an API key"),
                         Div(
                             Form(
                                 Button(
-                                    "Create Your First API Key",
+                                    "Get Your First Key",
                                     type="submit",
                                     disabled=has_user_keys
                                 ),
@@ -766,10 +766,10 @@ def get(auth):
                         cls="setup-step"
                     ),
                     Div(
-                        H3("2. Create a dev environment"),
+                        H3("2. Run any code inside a remote sandbox"),
                         Div(
                             H4("First, install the Daytona SDK"),
-                            P("Run this command in your terminal:"),
+                            P("Open your terminal and run:"),
                             Div(
                                 Pre(
                                     Code("pip install daytona_sdk"),
@@ -783,7 +783,7 @@ def get(auth):
                                 ),
                                 cls="code-container"
                             ),
-                            H4("Then, create and run the Python script"),
+                            H4("Next, create and execute a sample Python script"),
                             P("1. Save this code in a file named ", Code("app.py"), ":"),
                             Div(
                                 Pre(
@@ -798,7 +798,7 @@ def get(auth):
                                 ),
                                 cls="code-container"
                             ),
-                            P("2. Run the script with:"),
+                            P("2. Run the example script with:"),
                             Div(
                                 Pre(
                                     Code("python app.py"),
@@ -811,6 +811,11 @@ def get(auth):
                                     cls="copy-button"
                                 ),
                                 cls="code-container"
+                            ),
+                            P(
+                            "Note: The first workspace creation may take a few minutes as it pulls the image. "
+                            "Subsequent workspace creations will be much faster.",
+                            cls="warning"
                             ),
                             cls="step-content"
                         ),

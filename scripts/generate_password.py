@@ -1,25 +1,36 @@
-# scripts/generate_password.py
+#!/usr/bin/env python3
 import sys
+import hashlib
 import os
-from pathlib import Path
+import getpass
 
-# Add parent directory to path so we can import utils
-sys.path.append(str(Path(__file__).parent.parent))
+def generate_salt():
+    return os.urandom(16).hex()
 
-from utils.auth import generate_env_password
+def hash_password(password, salt):
+    return hashlib.sha256((password + salt).encode()).hexdigest()
 
 def main():
-    try:
-        salt, hashed = generate_env_password()
-        print("\nAdd these lines to your .env file:")
-        print(f"PASSWORD_SALT={salt}")
-        print(f"HASHED_PASSWORD={hashed}")
-    except ValueError as e:
-        print(f"Error: {e}")
+    if len(sys.argv) != 2:
+        print("Usage: python3 generate_password.py <username>")
         sys.exit(1)
-    except Exception as e:
-        print(f"Unexpected error: {e}")
+
+    username = sys.argv[1]
+
+    # Read password from stdin instead of prompting
+    password = sys.stdin.readline().strip()
+
+    if not password:
+        print("Error: Password cannot be empty")
         sys.exit(1)
+
+    salt = generate_salt()
+    hashed_password = hash_password(password, salt)
+
+    print(f"Username: {username}")
+    print(f"Password: {password}")
+    print(f"Salt: {salt}")
+    print(f"Hash: {hashed_password}")
 
 if __name__ == "__main__":
     main()
