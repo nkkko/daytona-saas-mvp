@@ -439,12 +439,16 @@ class DaytonaClient:
     def generate_api_key(self, key_name: str, key_type: str = "client") -> Optional[str]:
         """Generate a new API key."""
         try:
-            # Add key type to the request if needed
             response = self._make_request('POST', f'/apikey/{key_name}')
             return response.text if response else None
+        except requests.exceptions.HTTPError as e:
+            if e.response.status_code == 500:
+                logger.error(f"Server error while generating API key: {e.response.text}")
+                raise DaytonaError("Server error: Unable to generate API key. The key name might be invalid or already exists.")
+            raise DaytonaError(f"Failed to generate API key: {str(e)}")
         except Exception as e:
             logger.error(f"Error generating API key: {e}")
-            return None
+            raise DaytonaError(f"Unexpected error while generating API key: {str(e)}")
 
     def revoke_api_key(self, key_name: str) -> bool:
         """Revoke an API key."""
@@ -848,9 +852,28 @@ def get(auth):
 def post(key_name: str):
     """Create a new API key."""
     try:
+        # Validate key name
         if not key_name:
             return Div(
                 P("Key name is required", cls="error-message"),
+                id="keys-list"
+            )
+
+        # Add validation for key name format
+        import re
+        if not re.match("^[a-zA-Z0-9-_]+$", key_name):
+            return Div(
+                P("Key name can only contain letters, numbers, hyphens, and underscores",
+                  cls="error-message"),
+                id="keys-list"
+            )
+
+        # Check if key already exists
+        existing_keys = daytona.list_api_keys()
+        if any(key.name == key_name for key in existing_keys):
+            return Div(
+                P(f"An API key with name '{key_name}' already exists",
+                  cls="error-message"),
                 id="keys-list"
             )
 
@@ -858,7 +881,8 @@ def post(key_name: str):
         new_key = daytona.generate_api_key(key_name)
         if not new_key:
             return Div(
-                P("Failed to create API key", cls="error-message"),
+                P("Failed to create API key - the server returned an empty response",
+                  cls="error-message"),
                 id="keys-list"
             )
 
@@ -894,6 +918,13 @@ def post(key_name: str):
     except DaytonaError as e:
         return Div(
             P(f"Error: {str(e)}", cls="error-message"),
+            id="keys-list"
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error in API key creation: {e}")
+        return Div(
+            P("An unexpected error occurred while creating the API key. Please try again.",
+              cls="error-message"),
             id="keys-list"
         )
 
