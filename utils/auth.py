@@ -4,23 +4,48 @@ import hmac
 import secrets
 from typing import Optional, Tuple
 from getpass import getpass
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.DEBUG)
+logger = logging.getLogger(__name__)
 
 def hash_password(password: str, salt: Optional[str] = None) -> Tuple[str, str]:
     """Hash a password with a salt using PBKDF2."""
     if salt is None:
         salt = secrets.token_hex(16)
+
+    logger.debug(f"Hashing password with salt: {salt}")
+
     key = hashlib.pbkdf2_hmac(
         'sha256',
         password.encode('utf-8'),
         salt.encode('utf-8'),
         100000  # number of iterations
     )
-    return salt, hashlib.sha256(key).hexdigest()
+    hash_value = hashlib.sha256(key).hexdigest()
+
+    logger.debug(f"Generated hash: {hash_value}")
+
+    return salt, hash_value
 
 def verify_password(stored_password: str, stored_salt: str, provided_password: str) -> bool:
     """Verify a password against its hash."""
-    _, new_hash = hash_password(provided_password, stored_salt)
-    return hmac.compare_digest(stored_password.encode('utf-8'), new_hash.encode('utf-8'))
+    logger.debug(f"Verifying password...")
+    logger.debug(f"Stored salt: {stored_salt}")
+    logger.debug(f"Stored hash: {stored_password}")
+
+    # Generate hash of provided password
+    _, computed_hash = hash_password(provided_password, stored_salt)
+
+    logger.debug(f"Computed hash: {computed_hash}")
+    logger.debug(f"Stored hash:  {stored_password}")
+
+    # Use hmac.compare_digest for secure comparison
+    result = hmac.compare_digest(stored_password.encode('utf-8'), computed_hash.encode('utf-8'))
+    logger.debug(f"Password verification result: {result}")
+
+    return result
 
 def generate_env_password() -> Tuple[str, str]:
     """Generate a salt and hash for a password."""

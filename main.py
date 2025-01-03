@@ -978,25 +978,37 @@ def post(username: str, password: str, session):
 @rt("/login")
 def post(username: str, password: str, session):
     """Login handler using hashed password."""
-    logger.info(f"Login attempt for user: {username}")
-    logger.info(f"Expected user: {config['USER']}")
-    logger.info(f"Have PASSWORD_SALT: {'PASSWORD_SALT' in config}")
-    logger.info(f"Have HASHED_PASSWORD: {'HASHED_PASSWORD' in config}")
+    logger.info("=== Login Attempt ===")
+    logger.info(f"Username provided: {username}")
+    logger.info(f"Expected username: {config['USER']}")
+    logger.info(f"Password provided: {password}")
+    logger.info(f"Stored salt: {config['PASSWORD_SALT']}")
+    logger.info(f"Stored hash: {config['HASHED_PASSWORD']}")
 
     if username != config['USER']:
         logger.warning("Login failed - invalid username")
         return RedirectResponse('/login', status_code=303)
 
     try:
-        if not verify_password(
+        # Generate verification hash
+        _, verification_hash = hash_password(password, config['PASSWORD_SALT'])
+        logger.info(f"Verification hash: {verification_hash}")
+
+        # Verify password
+        verification_result = verify_password(
             config['HASHED_PASSWORD'],
             config['PASSWORD_SALT'],
             password
-        ):
+        )
+        logger.info(f"Password verification result: {verification_result}")
+
+        if not verification_result:
             logger.warning("Login failed - invalid password")
             return RedirectResponse('/login', status_code=303)
+
     except Exception as e:
         logger.error(f"Password verification error: {e}")
+        logger.exception(e)  # This will log the full stack trace
         return RedirectResponse('/login', status_code=303)
 
     logger.info("Login successful")
