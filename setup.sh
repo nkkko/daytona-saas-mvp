@@ -2,6 +2,8 @@
 
 # Daytona Installation Script
 # This script automates the installation of Daytona with remote profiles
+# chmod +x setup.sh
+# sudo ./setup.sh
 
 # Error handling
 set -e
@@ -83,6 +85,29 @@ log "Updating system packages..."
 apt-get update -y || error "Failed to update system packages"
 apt-get upgrade -y || error "Failed to upgrade packages"
 apt-get install -y systemd-container python3 python3-pip python3.12-venv nginx git netcat-openbsd || error "Failed to install required packages"
+
+# Install Docker
+log "Installing Docker..."
+apt-get install -y ca-certificates curl || error "Failed to install Docker prerequisites"
+install -m 0755 -d /etc/apt/keyrings || error "Failed to create keyrings directory"
+curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc || error "Failed to download Docker GPG key"
+chmod a+r /etc/apt/keyrings/docker.asc || error "Failed to set permissions on Docker GPG key"
+
+# Add Docker repository
+echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null || error "Failed to add Docker repository"
+
+# Update and install Docker
+apt-get update || error "Failed to update package list"
+apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin || error "Failed to install Docker"
+
+# Add daytona user to docker group and set permissions
+log "Configuring Docker permissions..."
+usermod -aG docker $DAYTONA_USER || error "Failed to add user to Docker group"
+chmod 666 /var/run/docker.sock || error "Failed to set Docker socket permissions"
+
+# Verify Docker installation
+log "Verifying Docker installation..."
+run_as_daytona "docker run hello-world" || error "Docker verification failed"
 
 # Create Daytona User
 log "Creating Daytona user..."
