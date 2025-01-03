@@ -5,38 +5,291 @@ import os
 from dotenv import load_dotenv
 from pathlib import Path
 import secrets
+import logging
+from typing import Optional, List, Dict, Any
+from datetime import datetime
+import json
 
-def setup_secret_key():
+# Add some CSS styles
+additional_styles = """
+.key-item {
+    display: flex;
+    align-items: center;
+    padding: 1rem;
+    margin: 0.5rem 0;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border: 1px solid #dee2e6;
+}
+
+.key-item > div {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    width: 100%;
+}
+
+.key-name {
+    margin: 0;
+    font-family: monospace;
+}
+
+.delete-button {
+    background-color: #dc3545;
+    color: white;
+    padding: 0.375rem 0.75rem;
+    border-radius: 4px;
+    border: none;
+    cursor: pointer;
+}
+
+.delete-button:hover {
+    background-color: #c82333;
+}
+
+.no-keys-message {
+    color: #6c757d;
+    text-align: center;
+    padding: 1rem;
+}
+
+.error-message {
+    color: #dc3545;
+    padding: 0.75rem;
+    margin: 0.5rem 0;
+    background: #f8d7da;
+    border: 1px solid #f5c6cb;
+    border-radius: 4px;
+}
+
+#keys-list {
+    margin-top: 1rem;
+}
+
+form {
+    display: grid;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+input[type="text"] {
+    width: 100%;
+}
+
+.button-container {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+}
+
+.button-container .button {
+    flex: 1;
+    text-align: center;
+}
+.setup-step {
+    margin-bottom: 2rem;
+}
+
+.step-content {
+    margin-left: 1rem;
+    margin-top: 1rem;
+}
+
+.onboarding-card {
+    max-width: 800px;
+    margin: 0 auto;
+}
+
+.api-key {
+    background: #f8f9fa;
+    padding: 0.5rem;
+    border-radius: 4px;
+    font-family: monospace;
+    word-break: break-all;
+}
+
+.warning {
+    color: #856404;
+    background-color: #fff3cd;
+    border: 1px solid #ffeeba;
+    padding: 0.75rem 1.25rem;
+    border-radius: 0.25rem;
+    margin-top: 1rem;
+}
+
+pre {
+    background: #f8f9fa;
+    padding: 1rem;
+    border-radius: 4px;
+    overflow-x: auto;
+}
+
+code {
+    font-family: monospace;
+}
+
+.error {
+    color: #721c24;
+    background-color: #f8d7da;
+    border: 1px solid #f5c6cb;
+    padding: 0.75rem 1.25rem;
+    border-radius: 0.25rem;
+    margin-top: 1rem;
+}
+
+.workspace-info {
+    flex-grow: 1;
+    padding: 15px;
+}
+
+.workspace-info h3 {
+    margin: 0 0 10px 0;
+    color: #2c3e50;
+    font-size: 1.2em;
+}
+
+.workspace-info p {
+    margin: 5px 0;
+    color: #666;
+}
+
+.project-info {
+    margin-top: 10px;
+    padding: 10px;
+    background-color: #f8f9fa;
+    border-radius: 4px;
+    border-left: 3px solid #0056b3;
+}
+
+.project-info p {
+    margin: 3px 0;
+    font-size: 0.9em;
+}
+
+.project-info p:first-child {
+    color: #0056b3;
+    font-weight: bold;
+}
+
+.workspace-item {
+    margin-bottom: 15px;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+    display: flex;
+    align-items: flex-start;
+    background-color: white;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.delete-button {
+    margin: 15px;
+    align-self: center;
+}
+
+.delete-button:hover {
+    background-color: #c82333;
+}
+
+.danger-button {
+    background-color: #dc3545;
+    color: white;
+    margin-top: 20px;
+    width: 100%;
+}
+
+.danger-button:hover {
+    background-color: #c82333;
+}
+
+.button-container {
+    display: flex;
+    gap: 1rem;
+    margin-top: 1rem;
+    justify-content: space-between;
+}
+
+.button-container .button {
+    flex: 1;
+    text-align: center;
+}
+
+.logout-button {
+    background-color: #dc3545;
+    color: white;
+}
+
+.logout-button:hover {
+    background-color: #c82333;
+}
+"""
+
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
+# Custom Exceptions
+class DaytonaError(Exception):
+    """Base exception for Daytona-related errors."""
+    pass
+
+class ConfigError(Exception):
+    """Configuration-related errors."""
+    pass
+
+# Data Models
+@dataclass
+class ApiKey:
+    name: str
+    keyHash: str
+    type: str
+
+@dataclass
+class Workspace:
+    id: str
+    name: str
+    target: str
+    projects: List[Dict[str, Any]]
+
+@dataclass
+class Project:
+    name: str
+    repository: Dict[str, Any]
+    image: str
+    user: str
+
+def filter_user_keys(api_keys):
+    """Filter out system keys (default, app) from the list."""
+    SYSTEM_KEYS = {'default', 'app'}  # Define system keys to filter out
+    return [key for key in api_keys if key.name not in SYSTEM_KEYS]
+
+def setup_secret_key() -> str:
     """Setup and validate secret key with appropriate fallbacks."""
-    # Get or generate secret key
     secret_key = os.getenv('SECRET_KEY')
     if not secret_key:
         if os.getenv('ENVIRONMENT') == 'production':
-            raise ValueError("""
+            raise ConfigError("""
             SECRET_KEY must be set in production!
             Generate one with:
             python3 -c 'import secrets; print(secrets.token_hex(32))'
             """)
-
-        # Development: Generate and save key
         secret_key = secrets.token_hex(32)
-        print(f"Generated development SECRET_KEY: {secret_key}")
+        logger.info("Generated development SECRET_KEY")
 
-        # Save to .env for development consistency
         env_file = '.env'
-        if os.path.exists(env_file):
-            with open(env_file, 'a') as f:
+        try:
+            mode = 'a' if os.path.exists(env_file) else 'w'
+            with open(env_file, mode) as f:
                 f.write(f'\nSECRET_KEY={secret_key}')
-        else:
-            with open(env_file, 'w') as f:
-                f.write(f'SECRET_KEY={secret_key}')
+        except IOError as e:
+            logger.warning(f"Could not save SECRET_KEY to .env: {e}")
 
     return secret_key
 
-# Configuration
-def setup_config():
+def setup_config() -> Dict[str, str]:
     """Setup and validate configuration."""
-    # Load environment variables
     env_name = os.getenv('ENVIRONMENT', 'development')
     env_file = f"{env_name}.env"
     if Path(env_file).exists():
@@ -44,140 +297,313 @@ def setup_config():
     else:
         load_dotenv()
 
+    # Add BASE_URL to configuration
     config = {
         'DAYTONA_API_URL': os.getenv('DAYTONA_API_URL', 'http://localhost:3986'),
+        'DAYTONA_API_KEY': os.getenv('DAYTONA_API_KEY'),
         'GITHUB_CLIENT_ID': os.getenv('GITHUB_CLIENT_ID'),
         'GITHUB_CLIENT_SECRET': os.getenv('GITHUB_CLIENT_SECRET'),
+        'BASE_URL': os.getenv('BASE_URL', 'http://localhost:5001'),  # Add this line
         'SECRET_KEY': setup_secret_key(),
     }
 
-    # Validate required environment variables
-    if not all([config['GITHUB_CLIENT_ID'], config['GITHUB_CLIENT_SECRET']]):
-        raise ValueError("""
-        Missing required environment variables.
-        Please create a .env file with:
-        GITHUB_CLIENT_ID=your_github_client_id
-        GITHUB_CLIENT_SECRET=your_github_client_secret
-        DAYTONA_API_URL=http://localhost:3986  # Optional, defaults to http://localhost:3986
-        SECRET_KEY=your_secret_key  # Optional, will be auto-generated in development
-        """)
+    missing_vars = [k for k, v in config.items()
+                   if not v and k in ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']]
+    if missing_vars:
+        raise ConfigError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
     return config
 
-# Use configuration
-config = setup_config()
-app, rt = fast_app(
-    secret_key=config['SECRET_KEY'],
-    htmx=True,
-    pico=True
-)
+def format_uptime(seconds: int) -> str:
+    """Format uptime from seconds to a human-readable string."""
+    if seconds <= 0:
+        return "Not running"
 
-# Data classes
-@dataclass
-class ApiKey:
-    name: str
-    keyHash: str
-    type: str
+    days, remainder = divmod(seconds, 86400)
+    hours, remainder = divmod(remainder, 3600)
+    minutes, seconds = divmod(remainder, 60)
 
-# API Client
+    parts = []
+    if days > 0:
+        parts.append(f"{days}d")
+    if hours > 0:
+        parts.append(f"{hours}h")
+    if minutes > 0:
+        parts.append(f"{minutes}m")
+    if seconds > 0 or not parts:
+        parts.append(f"{seconds}s")
+
+    return " ".join(parts)
+
 class DaytonaClient:
-    def __init__(self, base_url):
-        self.base_url = base_url.rstrip('/')  # Remove trailing slash if present
+    def __init__(self, base_url: str, initial_api_key: Optional[str] = None, timeout: int = 10):
+        self.base_url = base_url.rstrip('/')
+        self.timeout = timeout
+        self.session = requests.Session()
+        self.api_key = initial_api_key
 
-    def _make_request(self, method, endpoint, **kwargs):
-        """Make HTTP request with error handling."""
+    def _make_request(self, method: str, endpoint: str, skip_auth: bool = False, **kwargs) -> Optional[requests.Response]:
+        """Make HTTP request with authentication."""
         try:
-            response = requests.request(method, f"{self.base_url}{endpoint}", **kwargs)
+            # Add authentication header if we have an API key and skip_auth is False
+            if self.api_key and not skip_auth:
+                headers = kwargs.get('headers', {})
+                headers['Authorization'] = f'Bearer {self.api_key}'
+                kwargs['headers'] = headers
+
+            kwargs['timeout'] = kwargs.get('timeout', self.timeout)
+            response = self.session.request(method, f"{self.base_url}{endpoint}", **kwargs)
             response.raise_for_status()
             return response
-        except requests.exceptions.RequestException as e:
-            print(f"Daytona API error: {e}")
+        except requests.exceptions.Timeout:
+            logger.error(f"Request timeout: {endpoint}")
+            raise DaytonaError("Request to Daytona API timed out")
+        except requests.exceptions.ConnectionError:
+            logger.error(f"Connection error: {endpoint}")
+            raise DaytonaError("Could not connect to Daytona server")
+        except requests.exceptions.HTTPError as e:
+            logger.error(f"HTTP error {e.response.status_code}: {endpoint}")
+            if e.response.status_code == 401:
+                raise DaytonaError("Authentication failed. Please check your API key.")
+            raise DaytonaError(f"Daytona API returned error: {e.response.status_code}")
+        except Exception as e:
+            logger.error(f"Unexpected error in Daytona API request: {str(e)}")
+            raise DaytonaError(f"Unexpected error: {str(e)}")
+
+    def initialize(self) -> str:
+        """Initialize Daytona client and get first API key."""
+        if self.api_key:
+            try:
+                self._make_request('GET', '/apikey')
+                logger.info("Successfully verified existing Daytona API key")
+                return self.api_key
+            except DaytonaError:
+                logger.warning("Existing API key is invalid, attempting to generate new one")
+                self.api_key = None
+
+        try:
+            response = self._make_request(
+                'POST',
+                '/apikey/initial-key',
+                skip_auth=True
+            )
+            if response and response.text:
+                self.api_key = response.text
+                logger.info("Successfully generated initial Daytona API key")
+                return self.api_key
+        except Exception as e:
+            logger.error(f"Failed to initialize Daytona client: {e}")
+            raise DaytonaError(
+                "Could not initialize Daytona connection. "
+                "Please ensure DAYTONA_API_KEY is set in your environment "
+                "or that you have permission to generate new keys."
+            )
+
+    def list_api_keys(self) -> List[ApiKey]:
+        """List all API keys."""
+        try:
+            response = self._make_request('GET', '/apikey')
+            if response:
+                keys_data = response.json()
+                return [ApiKey(**key) for key in keys_data]
+            return []
+        except Exception as e:
+            logger.error(f"Error listing API keys: {e}")
+            return []
+
+    def generate_api_key(self, key_name: str, key_type: str = "client") -> Optional[str]:
+        """Generate a new API key."""
+        try:
+            # Add key type to the request if needed
+            response = self._make_request('POST', f'/apikey/{key_name}')
+            return response.text if response else None
+        except Exception as e:
+            logger.error(f"Error generating API key: {e}")
             return None
 
-    def list_api_keys(self):
-        response = self._make_request('GET', '/apikey')
-        return response.json() if response else []
+    def revoke_api_key(self, key_name: str) -> bool:
+        """Revoke an API key."""
+        try:
+            response = self._make_request('DELETE', f'/apikey/{key_name}')
+            return bool(response)
+        except Exception as e:
+            logger.error(f"Error revoking API key: {e}")
+            return False
 
-    def generate_api_key(self, key_name):
-        response = self._make_request('POST', f'/apikey/{key_name}')
-        return response.text if response else None
+    def list_workspaces(self) -> List[Dict[str, Any]]:
+        """List all workspaces."""
+        try:
+            response = self._make_request('GET', '/workspace', headers={'Accept': 'application/json'})
+            if not response:
+                logger.error("No response from workspace listing endpoint")
+                return []
 
-    def revoke_api_key(self, key_name):
-        response = self._make_request('DELETE', f'/apikey/{key_name}')
-        return bool(response)
+            workspaces = response.json()
+            logger.info(f"Retrieved workspaces: {workspaces}")  # Debug log
 
-    def list_workspaces(self, api_key):
-        response = self._make_request('GET', '/workspace',
-                                    headers={'Authorization': f'Bearer {api_key}'})
-        return response.json() if response else []
+            # Handle both array and object responses
+            if isinstance(workspaces, dict):
+                workspaces = [workspaces]
+            elif not isinstance(workspaces, list):
+                logger.error(f"Unexpected workspace data format: {type(workspaces)}")
+                return []
 
-# Single DaytonaClient initialization
-daytona = DaytonaClient(config['DAYTONA_API_URL'])
+            # Filter out any None or invalid entries
+            return [w for w in workspaces if isinstance(w, dict) and w.get('id')]
 
-# Auth middleware
-def auth_before(req, sess):
-    auth = req.scope['auth'] = sess.get('auth', None)
-    if not auth:
-        return RedirectResponse('/login', status_code=303)
+        except Exception as e:
+            logger.error(f"Error listing workspaces: {e}")
+            return []
 
-beforeware = Beforeware(auth_before, skip=[r'/login', r'/github-callback'])
+    def get_workspace(self, workspace_id: str) -> Optional[Dict[str, Any]]:
+        """Get details of a specific workspace."""
+        try:
+            response = self._make_request('GET', f'/workspace/{workspace_id}')
+            if response:
+                workspace = response.json()
+                logger.info(f"Retrieved workspace details: {workspace}")  # Debug log
+                return workspace
+            return None
+        except Exception as e:
+            logger.error(f"Error getting workspace: {e}")
+            return None
 
-# Routes
-@rt("/login")
-def get():
-    return Titled(
-        "Login",  # Title
-        Container(  # Content
-            A(
-                "Login with GitHub",
-                href=f"https://github.com/login/oauth/authorize?client_id={config['GITHUB_CLIENT_ID']}&scope=user",
-                cls="button"
-            )
-        )
+    def delete_workspace(self, workspace_id: str) -> bool:
+        """Delete a specific workspace."""
+        try:
+            # Add force=true query parameter to ensure deletion
+            response = self._make_request('DELETE', f'/workspace/{workspace_id}', params={'force': 'true'})
+            return bool(response)
+        except Exception as e:
+            logger.error(f"Error deleting workspace: {e}")
+            return False
+
+    def delete_all_workspaces(self) -> bool:
+        """Delete all workspaces."""
+        try:
+            workspaces = self.list_workspaces()
+            for workspace in workspaces:
+                self.delete_workspace(workspace['id'])
+            return True
+        except Exception as e:
+            logger.error(f"Error deleting all workspaces: {e}")
+            return False
+
+# Initialize app and client
+try:
+    config = setup_config()
+    app, rt = fast_app(
+        secret_key=config['SECRET_KEY'],
+        htmx=True,
+        pico=True,
+        debug=os.getenv('ENVIRONMENT') != 'production',
+        hdrs=(Style(additional_styles),)  # Add the styles
+    )
+    daytona = DaytonaClient(
+        base_url=config['DAYTONA_API_URL'],
+        initial_api_key=config.get('DAYTONA_API_KEY')  # Pass initial API key if available
     )
 
-@rt("/github-callback")
-async def get(code: str, session):
-    # Exchange code for access token
-    response = requests.post(
-        'https://github.com/login/oauth/access_token',
-        data={
-            'client_id': GITHUB_CLIENT_ID,
-            'client_secret': GITHUB_CLIENT_SECRET,
-            'code': code
-        },
-        headers={'Accept': 'application/json'}
-    )
-
-    if response.ok:
-        access_token = response.json().get('access_token')
-        # Get user info
-        user_response = requests.get(
-            'https://api.github.com/user',
-            headers={
-                'Authorization': f'Bearer {access_token}',
-                'Accept': 'application/json'
-            }
-        )
-        if user_response.ok:
-            user = user_response.json()
-            session['auth'] = user['login']
-            return RedirectResponse('/', status_code=303)
-
-    return RedirectResponse('/login', status_code=303)
+    # Initialize Daytona client and verify/get API key
+    try:
+        initial_key = daytona.initialize()
+        logger.info("Daytona client initialized successfully")
+    except DaytonaError as e:
+        logger.warning(f"Could not initialize Daytona client: {e}")
+except (ConfigError, DaytonaError) as e:
+    logger.error(f"Failed to initialize app: {e}")
+    raise
 
 @rt("/")
 def get(auth):
-    api_keys = daytona.list_api_keys()
-    return Titled(
-        f"Daytona Dashboard - {auth}",  # First positional argument (title)
-        # Rest of content as second positional argument
-        Container(
-            Grid(
+    """Main dashboard with onboarding."""
+    try:
+        all_keys = daytona.list_api_keys()
+        user_keys = filter_user_keys(all_keys)
+        has_user_keys = len(user_keys) > 0
+
+        python_example = '''from daytona_sdk import Daytona, CreateWorkspaceParams
+
+daytona = Daytona()
+
+params = CreateWorkspaceParams(language="python")
+workspace = daytona.create()
+
+response = workspace.process.code_run('print("Sum of 3 and 4 is " + str(3 + 4))')
+if response.code != 0:
+    print(f"Error: {response.code} {response.result}")
+else:
+    print(response.result)
+
+daytona.remove(workspace)'''
+
+        return Titled(
+            f"Daytona Dashboard - {auth}",
+            Container(
+                Card(
+                    H2("Create your first development environment"),
+                    Div(
+                        H3("1. Add an API key"),
+                        Div(
+                            Form(
+                                Button(
+                                    "Create Default API Key",
+                                    type="submit",
+                                    disabled=has_user_keys
+                                ),
+                                hx_post="/api-keys/onboarding",
+                                hx_target="#api-key-status"
+                            ) if not has_user_keys else A(
+                                "Manage API Keys",
+                                href="/api-keys",
+                                cls="button"
+                            ),
+                            Div(id="api-key-status"),
+                            cls="step-content"
+                        ),
+                        cls="setup-step"
+                    ),
+                    Div(
+                        H3("2. Create a dev environment"),
+                        Div(
+                            H4("Python Quick Start"),
+                            Pre(
+                                Code(python_example),
+                                cls="language-python"
+                            ),
+                            cls="step-content"
+                        ),
+                        cls="setup-step"
+                    ),
+                    cls="onboarding-card"
+                ),
+                A("Logout", href="/logout", cls="button logout-button")
+            )
+        )
+    except DaytonaError as e:
+        logger.error(f"Dashboard error: {e}")
+        return create_error_response("Error", str(e))
+
+@rt("/api-keys")
+def get(auth):
+    """API Keys management page."""
+    try:
+        all_keys = daytona.list_api_keys()
+        user_keys = filter_user_keys(all_keys)
+
+        return Titled(
+            f"API Keys Management - {auth}",
+            Container(
                 Card(
                     H2("API Keys"),
                     Form(
-                        Input(name="key_name", placeholder="API Key Name"),
+                        Input(
+                            name="key_name",
+                            placeholder="API Key Name",
+                            required=True,
+                            pattern="[a-zA-Z0-9-_]+",
+                            title="Use only letters, numbers, hyphens, and underscores"
+                        ),
                         Button("Create New Key", type="submit"),
                         hx_post="/api-keys",
                         hx_target="#keys-list"
@@ -185,84 +611,438 @@ def get(auth):
                     Div(
                         id="keys-list",
                         *[Div(
-                            f"Name: {key['name']} (Type: {key['type']})",
+                            f"Name: {key.name} (Type: {key.type})",
                             Button(
                                 "Delete",
-                                hx_delete=f"/api-keys/{key['name']}",
-                                hx_target="#keys-list"
-                            )
-                        ) for key in api_keys]
+                                hx_delete=f"/api-keys/{key.name}",
+                                hx_target="#keys-list",
+                                hx_confirm="Are you sure you want to delete this API key?"
+                            ),
+                            cls="key-item"
+                        ) for key in user_keys]
                     )
                 ),
+                Div(
+                    A("Back to Dashboard", href="/", cls="button"),
+                    A("Logout", href="/logout", cls="button logout-button"),
+                    cls="button-container"
+                )
+            )
+        )
+    except DaytonaError as e:
+        logger.error(f"API Keys page error: {e}")
+        return create_error_response("Error", str(e))
+
+@rt("/api-keys/onboarding")
+def post():
+    """Create default API key for onboarding."""
+    try:
+        new_key = daytona.generate_api_key("onboarding", key_type="client")
+        if not new_key:
+            return Div(
+                P("Failed to create API key", cls="error"),
+                id="api-key-status"
+            )
+
+        return Div(
+            P("API key created successfully!"),
+            P("Your API key: ", Code(new_key), cls="api-key"),
+            P("Please save this key as it won't be shown again.", cls="warning"),
+            id="api-key-status"
+        )
+    except DaytonaError as e:
+        return Div(
+            P(f"Error creating API key: {str(e)}", cls="error"),
+            id="api-key-status"
+        )
+
+@rt("/workspaces")
+def get(auth):
+    """Workspaces management page."""
+    try:
+        workspaces = daytona.list_workspaces()
+
+        return Titled(
+            f"Daytona Workspaces - {auth}",
+            Container(
                 Card(
                     H2("Workspaces"),
-                    Div(id="workspaces-list")
+                    Div(
+                        id="workspaces-list",
+                        *[Div(
+                            Div(
+                                H3(workspace.get('name', 'Unnamed Workspace')),
+                                P(f"ID: {workspace.get('id', 'N/A')}"),
+                                P(f"Target: {workspace.get('target', 'N/A')}"),
+                                *[Div(
+                                    P(f"Repository: {project.get('repository', {}).get('url', 'N/A')}"),
+                                    P(f"Branch: {project.get('repository', {}).get('branch', 'N/A')}"),
+                                    P(f"Uptime: {format_uptime(project.get('state', {}).get('uptime', 0))}"),
+                                    P(f"Last Updated: {project.get('state', {}).get('updatedAt', 'N/A')}"),
+                                    cls="project-info"
+                                ) for project in workspace.get('projects', [])],
+                                _class="workspace-info"
+                            ),
+                            Button(
+                                "Delete",
+                                hx_delete=f"/workspace/{workspace['id']}",
+                                hx_target="#workspaces-list",
+                                hx_confirm="Are you sure you want to delete this workspace?",
+                                _class="delete-button"
+                            ),
+                            _class="workspace-item"
+                        ) for workspace in workspaces] if workspaces else [P("No workspaces found")]
+                    ),
+                    Div(
+                        Button(
+                            "Delete All Workspaces",
+                            hx_delete="/workspace/all",
+                            hx_target="#workspaces-list",
+                            hx_confirm="Are you sure you want to delete ALL workspaces? This cannot be undone!",
+                            _class="danger-button"
+                        ) if workspaces else None,
+                        id="delete-all-container"
+                    )
+                ),
+                Div(
+                    A("Back to API Keys", href="/", cls="button"),
+                    A("Logout", href="/logout", cls="button logout-button"),
+                    cls="button-container"
                 )
-            ),
-            A("Logout", href="/logout", cls="button")
+            )
+        )
+    except DaytonaError as e:
+        logger.error(f"Workspaces view error: {e}")
+        return create_error_response("Error", str(e))
+
+@rt("/initialize")
+def post():
+    """Initialize Daytona and create first API key."""
+    try:
+        initial_key = daytona.initialize()
+        return Div(
+            P("Daytona initialized successfully!"),
+            Script("setTimeout(function() { window.location.reload(); }, 1500);"),
+            id="setup-status"
+        )
+    except DaytonaError as e:
+        return Div(
+            P(f"Error initializing Daytona: {str(e)}"),
+            cls="error",
+            id="setup-status"
+        )
+
+# Routes
+@rt("/login")
+def get():
+    """Login page."""
+    callback_url = f"{config['BASE_URL']}/github-callback"
+    github_auth_url = (
+        "https://github.com/login/oauth/authorize"
+        f"?client_id={config['GITHUB_CLIENT_ID']}"
+        f"&redirect_uri={callback_url}"
+        "&scope=user"
+    )
+
+    return Titled(
+        "Login to Daytona Dashboard",
+        Container(
+            Card(
+                H2("Welcome to Daytona Dashboard"),
+                A(
+                    "Login with GitHub",
+                    href=github_auth_url,
+                    cls="button"
+                )
+            )
         )
     )
 
-@rt("/api-keys")
-def post(key_name: str):
-    if not key_name:
-        return "Key name is required"
-
-    new_key = daytona.generate_api_key(key_name)
-    if not new_key:
-        return "Failed to create API key - server error"
+@rt("/github-callback")
+async def get(code: Optional[str] = None, error: Optional[str] = None, error_description: Optional[str] = None, session=None):
+    """GitHub OAuth callback handler."""
+    if error or not code:
+        error_msg = error_description or error or "Authentication failed"
+        return create_error_response(
+            "Authentication Error",
+            f"GitHub login failed: {error_msg}"
+        )
 
     try:
-        api_keys = daytona.list_api_keys()
-        # Create the list of key divs first
-        key_divs = [
-            Div(
-                f"Name: {key['name']} (Type: {key['type']})",
-                Button(
-                    "Delete",
-                    hx_delete=f"/api-keys/{key['name']}",
-                    hx_target="#keys-list"
-                )
-            )
-            for key in api_keys
-        ]
-        # Then create the container div with all children
-        return Div(
-            *key_divs,  # Unpack the key divs
-            Script(f"alert('New API Key: {new_key}')"),
-            id="keys-list"  # keyword args after positional args
+        # Exchange code for access token
+        callback_url = f"{config['BASE_URL']}/github-callback"
+        response = requests.post(
+            'https://github.com/login/oauth/access_token',
+            data={
+                'client_id': config['GITHUB_CLIENT_ID'],
+                'client_secret': config['GITHUB_CLIENT_SECRET'],
+                'code': code,
+                'redirect_uri': callback_url
+            },
+            headers={'Accept': 'application/json'},
+            timeout=10
         )
-    except Exception as e:
-        print(f"Error rendering API keys: {e}")
-        return "Failed to update API keys list"
+        response.raise_for_status()
 
-@rt("/api-keys/{key_name}")
-def delete(key_name: str):
-    if daytona.revoke_api_key(key_name):
-        api_keys = daytona.list_api_keys()
-        # Create the list of key divs first
-        key_divs = [
-            Div(
-                f"Name: {key['name']} (Type: {key['type']})",
-                Button(
-                    "Delete",
-                    hx_delete=f"/api-keys/{key['name']}",
-                    hx_target="#keys-list"
-                )
-            )
-            for key in api_keys
-        ]
-        # Then create the container div with all children
-        return Div(
-            *key_divs,  # Unpack the key divs
-            id="keys-list"  # keyword args after positional args
+        token_data = response.json()
+        if 'error' in token_data:
+            raise ValueError(token_data.get('error_description', token_data['error']))
+
+        access_token = token_data.get('access_token')
+        if not access_token:
+            raise ValueError("No access token in response")
+
+        # Get user info
+        user_response = requests.get(
+            'https://api.github.com/user',
+            headers={
+                'Authorization': f'Bearer {access_token}',
+                'Accept': 'application/json'
+            },
+            timeout=10
         )
-    return "Failed to delete API key"
+        user_response.raise_for_status()
+
+        user = user_response.json()
+        if session:
+            session['auth'] = user['login']
+            session['github_token'] = access_token
+        return RedirectResponse('/', status_code=303)
+
+    except Exception as e:
+        logger.error(f"GitHub authentication error: {str(e)}")
+        return create_error_response(
+            "Authentication Failed",
+            f"Could not authenticate with GitHub: {str(e)}"
+        )
 
 @rt("/logout")
 def get(session):
-    session.clear()
-    return RedirectResponse('/login', status_code=303)
+    """Logout handler."""
+    try:
+        session.clear()
+    except Exception as e:
+        logger.error(f"Error during logout: {e}")
+    return RedirectResponse('/login', status_code=303)  # Changed from github-callback to login
+
+@rt("/api-keys")
+def get(auth):
+    """API Keys management page."""
+    try:
+        all_keys = daytona.list_api_keys()
+        user_keys = filter_user_keys(all_keys)
+
+        return Titled(
+            f"API Keys Management - {auth}",
+            Container(
+                Card(
+                    H2("API Keys"),
+                    Form(
+                        Input(
+                            id="key_name",
+                            name="key_name",
+                            placeholder="API Key Name",
+                            required=True,
+                            pattern="[a-zA-Z0-9-_]+",
+                            title="Use only letters, numbers, hyphens, and underscores"
+                        ),
+                        Button("Create New Key", type="submit", cls="primary"),
+                        hx_post="/api-keys",
+                        hx_target="#keys-list"
+                    ),
+                    Div(
+                        id="keys-list",
+                        *[Div(
+                            Div(
+                                P(f"Name: {key.name}", cls="key-name"),
+                                Button(
+                                    "Delete",
+                                    hx_delete=f"/api-keys/{key.name}",
+                                    hx_target="#keys-list",
+                                    hx_confirm=f"Are you sure you want to delete the API key '{key.name}'?",
+                                    cls="delete-button"
+                                ),
+                            ),
+                            cls="key-item"
+                        ) for key in user_keys] if user_keys else [
+                            P("No API keys found. Create one above.", cls="no-keys-message")
+                        ]
+                    )
+                ),
+                Div(
+                    A("Back to Dashboard", href="/", cls="button"),
+                    A("Logout", href="/logout", cls="button logout-button"),
+                    cls="button-container"
+                )
+            )
+        )
+    except DaytonaError as e:
+        logger.error(f"API Keys page error: {e}")
+        return create_error_response("Error", str(e))
+
+
+@rt("/api-keys/{key_name}")
+def delete(key_name: str):
+    """Delete API key."""
+    try:
+        # Prevent deletion of system keys
+        if key_name in {'default', 'app'}:
+            return Div(
+                P("Cannot delete system keys", cls="error-message"),
+                id="keys-list"
+            )
+
+        if not daytona.revoke_api_key(key_name):
+            return Div(
+                P("Failed to delete API key", cls="error-message"),
+                id="keys-list"
+            )
+
+        # Get updated list and filter system keys
+        all_keys = daytona.list_api_keys()
+        user_keys = filter_user_keys(all_keys)
+
+        return Div(
+            *[Div(
+                Div(
+                    P(f"Name: {key.name}", cls="key-name"),
+                    Button(
+                        "Delete",
+                        hx_delete=f"/api-keys/{key.name}",
+                        hx_target="#keys-list",
+                        hx_confirm=f"Are you sure you want to delete the API key '{key.name}'?",
+                        cls="delete-button"
+                    ),
+                ),
+                cls="key-item"
+            ) for key in user_keys] if user_keys else [
+                P("No API keys found. Create one above.", cls="no-keys-message")
+            ],
+            id="keys-list"
+        )
+    except DaytonaError as e:
+        return Div(
+            P(f"Error: {str(e)}", cls="error-message"),
+            id="keys-list"
+        )
+
+# Add routes for workspace operations
+@rt("/workspace/{workspace_id}")
+def delete(workspace_id: str):
+    """Delete a workspace."""
+    try:
+        if not daytona.delete_workspace(workspace_id):
+            return "Failed to delete workspace"
+
+        workspaces = daytona.list_workspaces()
+        return Div(
+            *[Div(
+                Div(
+                    H3(workspace.get('name', 'Unnamed Workspace')),
+                    P(f"ID: {workspace.get('id', 'N/A')}"),
+                    P(f"Target: {workspace.get('target', 'N/A')}"),
+                    *[Div(
+                        P(f"Repository: {project.get('repository', {}).get('url', 'N/A')}"),
+                        P(f"Branch: {project.get('repository', {}).get('branch', 'N/A')}"),
+                        P(f"Uptime: {format_uptime(project.get('state', {}).get('uptime', 0))}"),
+                        P(f"Last Updated: {project.get('state', {}).get('updatedAt', 'N/A')}"),
+                        cls="project-info"
+                    ) for project in workspace.get('projects', [])],
+                    _class="workspace-info"
+                ),
+                Button(
+                    "Delete",
+                    hx_delete=f"/workspace/{workspace['id']}",
+                    hx_target="#workspaces-list",
+                    hx_confirm="Are you sure you want to delete this workspace?",
+                    _class="delete-button"
+                ),
+                _class="workspace-item"
+            ) for workspace in workspaces] if workspaces else [P("No workspaces found")],
+            id="workspaces-list"
+        )
+    except DaytonaError as e:
+        return f"Error: {str(e)}"
+
+@rt("/workspace/all")
+def delete():
+    """Delete all workspaces."""
+    try:
+        # Get list of all workspaces first
+        workspaces = daytona.list_workspaces()
+
+        success = True
+        errors = []
+
+        # Delete each workspace individually
+        for workspace in workspaces:
+            try:
+                if not daytona.delete_workspace(workspace['id']):
+                    success = False
+                    errors.append(f"Failed to delete workspace {workspace.get('name', workspace['id'])}")
+            except DaytonaError as e:
+                success = False
+                errors.append(f"Error deleting workspace {workspace.get('name', workspace['id'])}: {str(e)}")
+                logger.error(f"Error deleting workspace {workspace['id']}: {e}")
+
+        if not success:
+            return Div(
+                P("Failed to delete some workspaces:"),
+                *[P(error) for error in errors],
+                id="workspaces-list"
+            )
+
+        return Div(
+            P("No workspaces found"),
+            id="workspaces-list"
+        )
+    except DaytonaError as e:
+        logger.error(f"Error in delete all workspaces: {e}")
+        return f"Error: {str(e)}"
+
+@rt("/workspace/{workspace_id}")
+def delete(workspace_id: str):
+    """Delete a workspace."""
+    try:
+        # Make sure to include force=true in the query parameters
+        response = daytona._make_request(
+            'DELETE',
+            f'/workspace/{workspace_id}',
+            params={'force': 'true'}
+        )
+        if not response:
+            return "Failed to delete workspace"
+
+        workspaces = daytona.list_workspaces()
+        return Div(
+            *[Div(
+                Div(
+                    H3(workspace.get('name', 'Unnamed Workspace')),
+                    P(f"ID: {workspace.get('id', 'N/A')}"),
+                    P(f"Target: {workspace.get('target', 'N/A')}"),
+                    *[Div(
+                        P(f"Repository: {project.get('repository', {}).get('url', 'N/A')}"),
+                        P(f"Branch: {project.get('repository', {}).get('branch', 'N/A')}"),
+                        P(f"Uptime: {format_uptime(project.get('state', {}).get('uptime', 0))}"),
+                        P(f"Last Updated: {project.get('state', {}).get('updatedAt', 'N/A')}"),
+                        cls="project-info"
+                    ) for project in workspace.get('projects', [])],
+                    _class="workspace-info"
+                ),
+                Button(
+                    "Delete",
+                    hx_delete=f"/workspace/{workspace['id']}",
+                    hx_target="#workspaces-list",
+                    hx_confirm="Are you sure you want to delete this workspace?",
+                    _class="delete-button"
+                ),
+                _class="workspace-item"
+            ) for workspace in workspaces] if workspaces else [P("No workspaces found")],
+            id="workspaces-list"
+        )
+    except DaytonaError as e:
+        logger.error(f"Error deleting workspace {workspace_id}: {e}")
+        return f"Error: {str(e)}"
 
 if __name__ == "__main__":
     serve()
