@@ -321,21 +321,12 @@ def setup_config() -> Dict[str, str]:
     else:
         load_dotenv()
 
-    # Add BASE_URL to configuration
     config = {
         'DAYTONA_API_URL': os.getenv('DAYTONA_API_URL', 'http://localhost:3986'),
         'DAYTONA_API_KEY': os.getenv('DAYTONA_API_KEY'),
-        'GITHUB_CLIENT_ID': os.getenv('GITHUB_CLIENT_ID'),
-        'GITHUB_CLIENT_SECRET': os.getenv('GITHUB_CLIENT_SECRET'),
         'BASE_URL': os.getenv('BASE_URL', 'http://localhost:5001'),
         'SECRET_KEY': setup_secret_key(),
-        'ALLOWED_GITHUB_USERS': os.getenv('ALLOWED_GITHUB_USERS', '').split(',')
     }
-
-    missing_vars = [k for k, v in config.items()
-                   if not v and k in ['GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']]
-    if missing_vars:
-        raise ConfigError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
     return config
 
@@ -689,100 +680,43 @@ def post():
             id="setup-status"
         )
 
-# Routes
 @rt("/login")
 def get():
-    """Login page."""
-    callback_url = f"{config['BASE_URL']}/github-callback"
-    github_auth_url = (
-        "https://github.com/login/oauth/authorize"
-        f"?client_id={config['GITHUB_CLIENT_ID']}"
-        f"&redirect_uri={callback_url}"
-        "&scope=user"
-    )
-
+    """Simple login page."""
     return Titled(
         "Login to Daytona Dashboard",
         Container(
             Card(
                 H2("Welcome to Daytona Dashboard"),
-                A(
-                    "Login with GitHub",
-                    href=github_auth_url,
-                    cls="button"
+                Form(
+                    Input(
+                        type="text",
+                        name="username",
+                        placeholder="Username",
+                        required=True
+                    ),
+                    Input(
+                        type="password",
+                        name="password",
+                        placeholder="Password",
+                        required=True
+                    ),
+                    Button("Login", type="submit"),
+                    method="POST",
+                    action="/login"
                 )
             )
         )
     )
 
-@rt("/github-callback")
-async def get(code: Optional[str] = None, error: Optional[str] = None, error_description: Optional[str] = None, session=None):
-    """GitHub OAuth callback handler."""
-    if error or not code:
-        error_msg = error_description or error or "Authentication failed"
-        return create_error_response(
-            "Authentication Error",
-            f"GitHub login failed: {error_msg}"
-        )
-
-    try:
-        # Exchange code for access token
-        callback_url = f"{config['BASE_URL']}/github-callback"
-        response = requests.post(
-            'https://github.com/login/oauth/access_token',
-            data={
-                'client_id': config['GITHUB_CLIENT_ID'],
-                'client_secret': config['GITHUB_CLIENT_SECRET'],
-                'code': code,
-                'redirect_uri': callback_url
-            },
-            headers={'Accept': 'application/json'},
-            timeout=10
-        )
-        response.raise_for_status()
-
-        token_data = response.json()
-        if 'error' in token_data:
-            raise ValueError(token_data.get('error_description', token_data['error']))
-
-        access_token = token_data.get('access_token')
-        if not access_token:
-            raise ValueError("No access token in response")
-
-        # Get user info
-        user_response = requests.get(
-            'https://api.github.com/user',
-            headers={
-                'Authorization': f'Bearer {access_token}',
-                'Accept': 'application/json'
-            },
-            timeout=10
-        )
-        user_response.raise_for_status()
-
-        user = user_response.json()
-        username = user['login']
-
-        # Check if user is allowed
-        allowed_users = config['ALLOWED_GITHUB_USERS']
-        if allowed_users and username not in allowed_users:
-            logger.warning(f"Unauthorized access attempt by GitHub user: {username}")
-            return create_error_response(
-                "Access Denied",
-                "You are not authorized to access this application. Please contact the administrator."
-            )
-
-        if session:
-            session['auth'] = username
-            session['github_token'] = access_token
+@rt("/login")
+def post(username: str, password: str, session):
+    """Simple login handler."""
+    # Add your own authentication logic here
+    if username == "admin" and password == "admin":  # Replace with proper authentication
+        session['auth'] = username
         return RedirectResponse('/', status_code=303)
-
-    except Exception as e:
-        logger.error(f"GitHub authentication error: {str(e)}")
-        return create_error_response(
-            "Authentication Failed",
-            f"Could not authenticate with GitHub: {str(e)}"
-        )
+    return RedirectResponse('/login', status_code=303)
 
 @rt("/logout")
 def get(session):
@@ -791,7 +725,7 @@ def get(session):
         session.clear()
     except Exception as e:
         logger.error(f"Error during logout: {e}")
-    return RedirectResponse('/login', status_code=303)  # Changed from github-callback to login
+    return RedirectResponse('/login', status_code=303)
 
 @rt("/api-keys")
 def get(auth):
