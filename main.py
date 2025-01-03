@@ -710,34 +710,36 @@ def get(auth, req):
         # Add copy button JavaScript
         copy_script = """
         function copyText(text, buttonEl) {
-            const textArea = document.createElement('textarea');
-            textArea.value = text;
-            document.body.appendChild(textArea);
-            textArea.select();
-            document.execCommand('copy');
-            document.body.removeChild(textArea);
+            navigator.clipboard.writeText(text).then(() => {
+                buttonEl.classList.add('copied');
+                const originalText = buttonEl.textContent;
+                buttonEl.textContent = 'Copied!';
 
-            // Update button state
-            buttonEl.classList.add('copied');
-            const originalText = buttonEl.textContent;
-            buttonEl.textContent = 'Copied!';
-
-            // Reset button state after 2 seconds
-            setTimeout(() => {
-                buttonEl.classList.remove('copied');
-                buttonEl.textContent = originalText;
-            }, 2000);
+                setTimeout(() => {
+                    buttonEl.classList.remove('copied');
+                    buttonEl.textContent = originalText;
+                }, 2000);
+            }).catch(err => console.error('Failed to copy:', err));
         }
 
-        function copyInstall(buttonEl) {
-            const installCommand = document.getElementById('install-command').textContent;
-            copyText(installCommand.trim(), buttonEl);
+        function copyFromElement(elementId, buttonEl) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                copyText(element.textContent.trim(), buttonEl);
+            }
         }
 
-        function copyCode(buttonEl) {
-            const codeEl = document.getElementById('python-example');
-            copyText(codeEl.textContent, buttonEl);
-        }
+        // Simplified copy functions using the generic copyFromElement
+        const copyHandlers = {
+            'install': 'install-command',
+            'code': 'python-example',
+            'run': 'run-command'
+        };
+
+        Object.entries(copyHandlers).forEach(([action, elementId]) => {
+            window[`copy${action.charAt(0).toUpperCase() + action.slice(1)}`] =
+                (buttonEl) => copyFromElement(elementId, buttonEl);
+        });
         """
 
         return Titled(
