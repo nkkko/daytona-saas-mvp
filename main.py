@@ -776,7 +776,7 @@ def get(auth, req):
                             P("Open your terminal and run:"),
                             Div(
                                 Pre(
-                                    Code("pip install daytona_sdk"),
+                                    Code("pip install daytona-sdk"),
                                     cls="language-bash",
                                     id="install-command"
                                 ),
