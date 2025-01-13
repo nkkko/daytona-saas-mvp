@@ -86,6 +86,13 @@ apt-get update -y || error "Failed to update system packages"
 apt-get upgrade -y || error "Failed to upgrade packages"
 apt-get install -y systemd-container python3 python3-pip python3.12-venv nginx git netcat-openbsd || error "Failed to install required packages"
 
+# Create Daytona User
+log "Creating Daytona user..."
+if ! id "$DAYTONA_USER" &>/dev/null; then
+    adduser --disabled-password --gecos "" $DAYTONA_USER || error "Failed to create Daytona user"
+    usermod -aG sudo $DAYTONA_USER || error "Failed to add Daytona user to sudo group"
+fi
+
 # Install Docker
 log "Installing Docker..."
 apt-get install -y ca-certificates curl || error "Failed to install Docker prerequisites"
@@ -108,13 +115,6 @@ chmod 666 /var/run/docker.sock || error "Failed to set Docker socket permissions
 # Verify Docker installation
 log "Verifying Docker installation..."
 run_as_daytona "docker run hello-world" || error "Docker verification failed"
-
-# Create Daytona User
-log "Creating Daytona user..."
-if ! id "$DAYTONA_USER" &>/dev/null; then
-    adduser --disabled-password --gecos "" $DAYTONA_USER || error "Failed to create Daytona user"
-    usermod -aG sudo $DAYTONA_USER || error "Failed to add Daytona user to sudo group"
-fi
 
 # Setup Daytona Installation Directory
 log "Setting up Daytona installation directory..."
