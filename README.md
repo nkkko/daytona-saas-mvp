@@ -27,6 +27,16 @@ This project provides a web interface for:
 
 ## Installation
 
+A. Prepare machine
+1. Clone the repository:
+```bash
+git clone https://github.com/yourusername/daytona-saas-mvp.git
+cd daytona-saas-mvp
+chmod +x setup.sh
+./setup.sh
+```
+
+B. Run the dashboard:
 1. Clone the repository:
 ```bash
 git clone https://github.com/yourusername/daytona-saas-mvp.git
