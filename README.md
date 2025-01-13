@@ -30,7 +30,7 @@ This project provides a web interface for:
 A. Prepare machine
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/daytona-saas-mvp.git
+git clone https://github.com/nkkko/daytona-saas-mvp.git
 cd daytona-saas-mvp
 chmod +x setup.sh
 ./setup.sh
@@ -39,7 +39,7 @@ chmod +x setup.sh
 B. Run the dashboard:
 1. Clone the repository:
 ```bash
-git clone https://github.com/yourusername/daytona-saas-mvp.git
+git clone https://github.com/nkkko/daytona-saas-mvp.git
 cd daytona-saas-mvp
 ```
 
